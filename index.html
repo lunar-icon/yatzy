@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Yatzy</title>
+  <link href="https://fonts.googleapis.com/css2?family=Winky+Rough&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin:0; padding:0; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:#eef2f7; padding:20px; }
+    h1 { text-align:center; color:#1e3a8a; margin-bottom:20px; }
+    .flex { display:flex; gap:20px; }
+    .dice-container { display:flex; gap:10px; justify-content:center; margin-bottom:15px; }
+    .dice { width:50px; height:50px; font-size:24px; display:flex; align-items:center; justify-content:center;
+            border:2px solid #1e3a8a; background:#fff; border-radius:8px; cursor:pointer;}
+    .held { background:#dbeafe; border-color:#2563eb; }
+    .controls { text-align:center; margin-bottom:20px; }
+    button {
+      padding:8px 16px;
+      font-size:16px;
+      margin-right:10px;
+      border:none;
+      border-radius:6px;
+      cursor:pointer;
+      font-family: 'Winky Rough', cursive;
+    }
+    button:disabled { background:#8b8bc3; cursor:not-allowed; }
+    .roll-count { font-weight:bold; margin-top:10px; }
+    .scoreboard { width:100%; margin-top:20px; overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { border:1px solid #ccc; padding:8px; text-align:center; }
+    th { background:#dde4f1; }
+    .turn-marker { font-weight:bold; color:#1e3a8a; }
+    .footer { text-align:center; margin-top:30px; }
+    .dice img {
+      width: 40px;
+      height: 40px;
+      user-select: none;
+      pointer-events: none;
+    }
+    .scored {
+      background-color: #bae6fd !important; /* 하늘색 */
+      color: #0c4a6e;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎲 Yatzy</h1>
+
+  <div class="controls">
+    <label>플레이어 수: 
+      <select id="playerCount">
+        <option>2</option><option>3</option><option>4</option>
+      </select>
+    </label>
+    <button id="startBtn">game start</button>
+  </div>
+
+  <div id="gameArea" style="display:none;">
+    <p class="turn-info">턴: <span class="turn-marker" id="currentPlayer">1</span>번 플레이어</p>
+    <div class="dice-container" id="diceContainer"></div>
+    <div class="controls">
+      <button id="rollBtn">rolling</button>
+      <span class="roll-count">남은 기회: <span id="rollsLeft">3</span></span>
+    </div>
+
+    <div class="scoreboard">
+      <table id="scoreTable">
+        <thead>
+          <tr><th>항목</th></tr>
+        </thead>
+      </table>
+    </div>
+
+    <div class="footer">
+      <button id="nextTurnBtn" disabled>next turn</button>
+    </div>
+  </div>
+
+  <script>
+    const startBtn = document.getElementById('startBtn'),
+          playerCountSelect = document.getElementById('playerCount'),
+          gameArea = document.getElementById('gameArea'),
+          diceContainer = document.getElementById('diceContainer'),
+          rollBtn = document.getElementById('rollBtn'),
+          rollsLeftSpan = document.getElementById('rollsLeft'),
+          currentPlayerSpan = document.getElementById('currentPlayer'),
+          scoreTable = document.getElementById('scoreTable'),
+          nextTurnBtn = document.getElementById('nextTurnBtn');
+
+    const COMBOS = [
+      "Aces","Deuces","Threes","Fours","Fives","Sixes",
+      "Three of a Kind","Four of a Kind",
+      "Full House","Small Straight","Large Straight","Yahtzy!","Choice"
+    ];
+
+    let players = [], currentPlayerIndex = 0;
+    let dice, held, rollsLeft;
+
+    function initPlayers(num) {
+      players = [];
+      for (let i=0; i<num; i++) {
+        const scores = {};
+        COMBOS.forEach(c => scores[c] = null);
+        scores.bonus = 0; scores.total = null;
+        players.push({scores});
+      }
+    }
+
+    function buildScoreboard() {
+      scoreTable.innerHTML = '';
+      const trHead = document.createElement('tr');
+      trHead.innerHTML = `<th>항목</th>${players.map((_,i)=>`<th>플레이어 ${i+1}</th>`).join('')}`;
+      scoreTable.appendChild(trHead);
+      COMBOS.concat(['Bonus','Total']).forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${item}</td>${players.map((_,i)=>{
+          const val = players[i].scores[item];
+          const cellId = `cell-${i}-${item.replace(/\s/g,'')}`;
+          const classStr = val !== null ? 'scored' : '';
+          return `<td id="${cellId}" class="${classStr}">${val===null?'':val}</td>`;
+        }).join('')}`;
+        scoreTable.appendChild(tr);
+      });
+    }
+
+    function startGame() {
+      initPlayers(+playerCountSelect.value);
+      buildScoreboard();
+      currentPlayerIndex = 0;
+      startTurn();
+      gameArea.style.display = 'block';
+    }
+
+    function startTurn() {
+      dice = [0,0,0,0,0];
+      held = [false, false, false, false, false];
+      rollsLeft = 3;
+      rollsLeftSpan.textContent = rollsLeft;
+      currentPlayerSpan.textContent = currentPlayerIndex+1;
+      rollBtn.disabled = false;
+      nextTurnBtn.disabled = true;
+      renderDice();
+    }
+
+    function renderDice() {
+      diceContainer.innerHTML = '';
+      dice.forEach((val,i) => {
+        const d = document.createElement('div');
+        d.className = 'dice' + (held[i]? ' held':'');
+        if(val) {
+          const img = document.createElement('img');
+          img.src = val === 1 ? 'ace.jpg' :
+                    val === 2 ? 'duo.png' :
+                    val === 3 ? 'three.png' :
+                    val === 4 ? 'four.png' :
+                    val === 5 ? 'five.png' :
+                    'six.png';
+          img.alt = val;
+          d.appendChild(img);
+        } else {
+          d.textContent = '-';
+        }
+        d.onclick = () => { if(val && rollsLeft<3) { held[i]=!held[i]; renderDice(); }};
+        diceContainer.appendChild(d);
+      });
+    }
+
+    function rollDice() {
+      if (rollsLeft === 0) return;
+      for(let i=0;i<5;i++) if(!held[i]) dice[i] = Math.floor(Math.random()*6)+1;
+      rollsLeft--;
+      rollsLeftSpan.textContent = rollsLeft;
+      renderDice();
+      if(rollsLeft === 0) rollBtn.disabled = true;
+      if(rollsLeft < 3) buildChoiceCells();
+    }
+
+    function buildChoiceCells() {
+      COMBOS.forEach((combo,i) => {
+        const cell = document.getElementById(`cell-${currentPlayerIndex}-${combo.replace(/\s/g,'')}`);
+        if(players[currentPlayerIndex].scores[combo] === null) {
+          cell.textContent = calcScore(combo);
+          cell.style.cursor = 'pointer';
+          cell.onclick = () => selectScore(combo);
+        } else {
+          cell.onclick = null;
+          cell.style.cursor = 'default';
+        }
+      });
+    }
+
+    function calcScore(combo) {
+      const counts = {};
+      dice.forEach(d => counts[d] = (counts[d]||0)+1);
+      switch(combo){
+        case "Aces": return counts[1]*1; case "Deuces": return counts[2]*2;
+        case "Threes": return counts[3]*3; case "Fours": return counts[4]*4;
+        case "Fives": return counts[5]*5; case "Sixes": return counts[6]*6;
+        case "Three of a Kind": return Object.values(counts).some(c=>c>=3)? dice.reduce((a,b)=>a+b,0):0;
+        case "Four of a Kind": return Object.values(counts).some(c=>c>=4)? dice.reduce((a,b)=>a+b,0):0;
+        case "Full House": return Object.values(counts).includes(3) && Object.values(counts).includes(2)? 25:0;
+        case "Small Straight": return [1,2,3,4,5,6].some(st=>st<=3 && [st,st+1,st+2,st+3].every(n=>counts[n]>0))? 30:0;
+        case "Large Straight": return [1,2,3,4,5,6].some(st=>st<=2 && [st,st+1,st+2,st+3,st+4].every(n=>counts[n]>0))? 40:0;
+        case "Yahtzy!": return Object.values(counts).some(c=>c===5)? 50:0;
+        case "Choice": return dice.reduce((a,b)=>a+b,0);
+      }
+      return 0;
+    }
+
+    function selectScore(combo) {
+      const score = calcScore(combo);
+      players[currentPlayerIndex].scores[combo] = score;
+
+      const upperSum = ["Aces","Deuces","Threes","Fours","Fives","Sixes"]
+        .reduce((s,c)=>s+(players[currentPlayerIndex].scores[c]||0),0);
+      players[currentPlayerIndex].scores.bonus = upperSum >= 63 ? 35 : 0;
+      players[currentPlayerIndex].scores.total = upperSum + players[currentPlayerIndex].scores.bonus +
+        COMBOS.filter(c=>!["Aces","Deuces","Threes","Fours","Fives","Sixes"].includes(c))
+               .reduce((s,c)=>s+(players[currentPlayerIndex].scores[c]||0),0);
+
+      buildScoreboard();
+      endTurn();
+    }
+
+    function endTurn() {
+      if(currentPlayerIndex < players.length -1) {
+        currentPlayerIndex++;
+      } else {
+        const allFilled = players.every(p=>COMBOS.every(c=>p.scores[c]!==null));
+        if(allFilled) return showWinner();
+        currentPlayerIndex = 0;
+      }
+      startTurn();
+    }
+
+    function showWinner() {
+      const totals = players.map(p=>p.scores.total);
+      const max = Math.max(...totals);
+      const winners = totals.reduce((a,v,i)=>(v===max? a.concat(i+1):a),[]);
+      alert(`게임 종료!\n최고 점수: ${max}\n승자: ${winners.join(', ')}번 플레이어`);
+    }
+
+    startBtn.onclick = startGame;
+    rollBtn.onclick = rollDice;
+    nextTurnBtn.onclick = endTurn;
+  </script>
+</body>
+</html>
